@@ -64,3 +64,15 @@ Caveats: validation that reads through views or stored procedures is not seen by
 check - use `INSTALL_WORKERS=1` for those. Workers use `spawn`, so the script must be run as a file
 (it has the `if __name__ == "__main__"` guard). Tested with `ibm_db_dbi`; other drivers need a quick
 check of `executemany` and `autocommit`.
+
+## Run the whole comparison on your own machine (one command)
+
+    git clone <this repo> && cd <this repo>
+    python local_test/run_local_test.py                 # starts Db2 in Docker (first run downloads ~3 GB)
+    python local_test/run_local_test.py --dsn "DATABASE=MYDB;HOSTNAME=host;PORT=50000;PROTOCOL=TCPIP;UID=u;PWD=p;"
+
+With `--dsn` it uses your Db2 and only creates/drops tables named `ZZ_BENCH_*`. It installs `ibm_db`,
+builds a fake project (`Utils/database.py`, `Config/settings.py`, WR files), runs the original script and
+`install_fast.py` (1/2/4/6 workers) on identical-size, freshly generated data, and checks that a failing WR
+ends identically in sequential and parallel mode. Docker needs `--privileged` (Docker Desktop on
+Windows/Mac works). Output on the reference run: 5,000-query WR 3.0 s -> 1.3 s; 12 WRs 9.8 s -> 2.4 s.

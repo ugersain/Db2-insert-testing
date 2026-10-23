@@ -194,7 +194,10 @@ def main():
         start_docker()
         dsn = DOCKER_DSN
     else:
-        connect(dsn).close()
+        try:
+            connect(dsn).close()
+        except Exception as e:
+            sys.exit(f"Cannot connect with the given --dsn: {e}")
         print("Connected to your Db2 (only ZZ_BENCH_* tables will be created/dropped).")
     work = Path(tempfile.mkdtemp(prefix="db2bench_"))
     proj = scaffold(work)
