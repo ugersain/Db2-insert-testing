@@ -76,3 +76,9 @@ builds a fake project (`Utils/database.py`, `Config/settings.py`, WR files), run
 `install_fast.py` (1/2/4/6 workers) on identical-size, freshly generated data, and checks that a failing WR
 ends identically in sequential and parallel mode. Docker needs `--privileged` (Docker Desktop on
 Windows/Mac works). Output on the reference run: 5,000-query WR 3.0 s -> 1.3 s; 12 WRs 9.8 s -> 2.4 s.
+
+### Windows: one click
+Download the repo as a ZIP (or clone it), unzip into e.g. `C:\Users\<you>\Desktop\DBTEST`, and double-click
+`RUN_ME_WINDOWS.bat`. It checks Python and Docker, installs `ibm_db`, starts Db2, runs every scenario and
+saves the output to `results.txt`. For your own Db2 run it from a terminal:
+`RUN_ME_WINDOWS.bat "DATABASE=MYDB;HOSTNAME=host;PORT=50000;PROTOCOL=TCPIP;UID=user;PWD=pw;"`.
