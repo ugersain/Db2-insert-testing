@@ -75,7 +75,7 @@ With `--dsn` it uses your Db2 and only creates/drops tables named `ZZ_BENCH_*`. 
 builds a fake project (`Utils/database.py`, `Config/settings.py`, WR files), runs the original script and
 `install_fast.py` (1/2/4/6 workers) on identical-size, freshly generated data, and checks that a failing WR
 ends identically in sequential and parallel mode. Docker needs `--privileged` (Docker Desktop on
-Windows/Mac works). Output on the reference run: 5,000-query WR 3.0 s -> 1.3 s; 12 WRs 9.8 s -> 2.4 s.
+Windows/Mac works). Reference run (Db2 database activated, so connect/close overhead is small): 5,000-query WR ~1.7 s -> 0.85 s (2.0x); 12 WRs 5.2 s -> 1.4 s with 6 workers (3.6x). Numbers vary with the machine; the ratio is what matters. Tip for local Docker tests: run `db2 activate db testdb` in the container, otherwise every connect/close costs ~1 s.
 
 ### Windows: one click
 Download the repo as a ZIP (or clone it), unzip into e.g. `C:\Users\<you>\Desktop\DBTEST`, and double-click
