@@ -11,6 +11,7 @@ import re
 from decimal import Decimal
 
 INSERT_RE = re.compile(r'^(INSERT\s+INTO\s+.+?\s+VALUES\s*)\((.*)\)\s*$', re.IGNORECASE | re.DOTALL)
+STR_RE = re.compile(r"^'(?:[^']|'')*'$")
 INT_RE = re.compile(r'^[+-]?\d+$')
 DEC_RE = re.compile(r'^[+-]?(\d+\.\d*|\.\d+|\d+)([eE][+-]?\d+)?$')
 
@@ -51,7 +52,7 @@ def split_values(s):
 def to_param(tok):
     if tok.upper() == "NULL":
         return None
-    if tok.startswith("'") and tok.endswith("'") and len(tok) >= 2:
+    if STR_RE.match(tok):           # strictly one quoted literal ('a' || 'b' does NOT match -> fallback)
         return tok[1:-1].replace("''", "'")
     if INT_RE.match(tok):
         return int(tok)
