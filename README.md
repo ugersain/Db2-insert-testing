@@ -12,24 +12,55 @@ The run also writes `rate.csv` and `load.clp` for Db2 `IMPORT` / `LOAD`.
 Rule of thumb: never commit per row; use `executemany` with `?` markers in
 batches of a few thousand rows; for files use `IMPORT ... COMMITCOUNT` or `LOAD`.
 
-## Real Db2 test: 1000 literal `INSERT INTO RATE ...` statements
+## IMPORTANT: benchmark methodology (corrected)
 
-`./run_env.sh` starts Db2 11.5.8 in Docker, then `python test_1000.py` runs the scenario
-(1000 rows, best of 3, Db2 on localhost so network latency is ~0 -- remote servers gain even more
-from batching).
+Db2 caches compiled statements by their exact SQL text. Repeating a run with identical literal
+`INSERT` text (or "best of 3" on the same text) skips compilation on runs 2-3 and flatters every
+literal-text method. A real install executes each statement once, so all numbers below use
+**fresh, unique data for every run** (median of 3). The early numbers in this repo's history
+(`test_1000.py`, e.g. "multi-row VALUES 39x") were measured the flattering way and overstate
+literal-text methods; `executemany` with `?` markers is faster than they suggested.
 
-| Strategy | Time for 1000 rows | vs. baseline |
+## Results (Db2 11.5 in Docker, cold/unique statements)
+
+### 5,000 rows, insert phase only (`bench/cold_insert_benchmark.py`)
+
+| Method | 29-col text table | 41-col mixed table |
 |---|---|---|
-| A. 1000 INSERT statements, commit after each (TOAD/script default) | 1.66 s | 1x |
-| B. same 1000 statements, one COMMIT | 1.04 s | 1.6x |
-| C. same 1000 statements in one `BEGIN ATOMIC` block | 19.6 s | **slower** |
-| D. one multi-row `INSERT ... VALUES (..),(..)` | 0.043 s | 39x |
-| E. prepared `?` statement in a loop, one COMMIT | 0.229 s | 7x |
-| F. `execute_many` array insert, one COMMIT | **0.022 s** | **75x** |
-| G. `db2 -tf inserts.sql` (CLP autocommit default) | 3.02 s | |
-| H. `db2 +c -tf inserts.sql` then COMMIT | 1.86 s | |
+| literal multi-row `VALUES`, batch 500 (previous script) | 2.87 s | 4.89 s |
+| literal multi-row `VALUES`, batch 100 | 2.10 s | 3.07 s |
+| `executemany` with `?`, chunk 1000 | **0.65 s** | **0.87 s** |
+| `ibm_db.execute_many` called directly | 0.89 s | 0.91 s |
 
-Why: with literal statements every INSERT is parsed/compiled separately (the text differs each time),
-plus a round trip and (in autocommit) a log flush. Prepared/array/multi-row inserts compile once and
-send many rows per round trip with one commit. A giant compound block is worst: Db2 must compile
-all 1000 statements as one section.
+### Whole script, same input files (`bench/original_install.py` vs `install_fast.py`)
+
+| Scenario | original | new, 1 worker | new, 4 workers | new, 6 workers |
+|---|---|---|---|---|
+| 1 WR with 5,000 INSERTs | 2.9 s | 1.3 s | | |
+| 12 WRs, 19,160 rows | 11.4 s | 5.0 s | 3.2 s | 2.8 s |
+
+(Local Db2, so no network latency; remote servers gain more from fewer round trips.)
+
+## What `install_fast.py` does
+
+Same flow as the original script (WR blocks, validation, status file, per-WR commit/rollback), plus:
+
+1. **`executemany` with `?` markers** for rows made only of plain literals (strings, numbers, NULL).
+   Anything else (`CURRENT TIMESTAMP`, casts, `'a' || 'b'`, `INSERT ... SELECT`) falls back to literal
+   multi-row batches of 100. If `executemany` raises, the WR is rolled back and retried the old way
+   before being declared failed.
+2. **Validation in one round trip**: all of a WR's checks run as one `SELECT SUM(COUNT)` on the server
+   instead of `fetchall()` on every row.
+3. **Parallel WRs, ordered commit** (`INSTALL_WORKERS`, default 4; 1 = old sequential behaviour).
+   WRs run in worker *processes* (threads are slower than sequential with ibm_db: the driver holds the
+   GIL), but commit strictly in file order. A failing WR is rolled back and marked FAILED, every later
+   WR is rolled back and never committed - identical status file and database to a sequential run
+   (tested: validation mismatch, duplicate-key SQL error, resume after failure).
+   WRs that write to or read from the same table (found by parsing the INSERT targets and the
+   validation `FROM`/`JOIN` tables) wait for each other.
+4. `TIMING insert=.. validation=..` per WR, `INSTALL_CHUNK` (rows per `executemany`, default 1000).
+
+Caveats: validation that reads through views or stored procedures is not seen by the table-dependency
+check - use `INSTALL_WORKERS=1` for those. Workers use `spawn`, so the script must be run as a file
+(it has the `if __name__ == "__main__"` guard). Tested with `ibm_db_dbi`; other drivers need a quick
+check of `executemany` and `autocommit`.

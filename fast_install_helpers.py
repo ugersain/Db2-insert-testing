@@ -11,8 +11,6 @@ import re
 from decimal import Decimal
 
 INSERT_RE = re.compile(r'^(INSERT\s+INTO\s+.+?\s+VALUES\s*)\((.*)\)\s*$', re.IGNORECASE | re.DOTALL)
-STR_RE = re.compile(r"^'(?:[^']|'')*'$")
-INT_RE = re.compile(r'^[+-]?\d+$')
 DEC_RE = re.compile(r'^[+-]?(\d+\.\d*|\.\d+|\d+)([eE][+-]?\d+)?$')
 
 
@@ -20,52 +18,38 @@ class Unsupported(Exception):
     pass
 
 
+_T = r"(?:'(?:[^']|'')*'|[^,'()\s][^,'()]*?)"        # one quoted string, or one plain token
+_ROW = re.compile(rf"\s*{_T}\s*(?:,\s*{_T}\s*)*")      # whole VALUES row must be made of these
+_TOK = re.compile(rf"\s*({_T})\s*(?:,|$)")
+
+
 def split_values(s):
-    """Split 'a, 'b,(c)', 3' on top-level commas, honouring '' escaped quotes and parentheses."""
-    out, buf, in_q, depth, i = [], [], False, 0, 0
-    while i < len(s):
-        ch = s[i]
-        if in_q:
-            buf.append(ch)
-            if ch == "'":
-                if i + 1 < len(s) and s[i + 1] == "'":
-                    buf.append("'"); i += 1
-                else:
-                    in_q = False
-        elif ch == "'":
-            in_q = True; buf.append(ch)
-        elif ch == "(":
-            depth += 1; buf.append(ch)
-        elif ch == ")":
-            depth -= 1; buf.append(ch)
-        elif ch == "," and depth == 0:
-            out.append("".join(buf).strip()); buf = []
-        else:
-            buf.append(ch)
-        i += 1
-    if in_q or depth:
-        raise Unsupported("unbalanced")
-    out.append("".join(buf).strip())
-    return out
+    """Split a VALUES row into tokens; raises Unsupported for functions, casts, 'a' || 'b', N'..', etc."""
+    if not _ROW.fullmatch(s):
+        raise Unsupported("row")
+    return _TOK.findall(s)
 
 
 def to_param(tok):
+    if tok[0] == "'":
+        body = tok[1:-1]
+        return body.replace("''", "'") if "''" in body else body
+    try:
+        return int(tok)
+    except ValueError:
+        pass
     if tok.upper() == "NULL":
         return None
-    if STR_RE.match(tok):           # strictly one quoted literal ('a' || 'b' does NOT match -> fallback)
-        return tok[1:-1].replace("''", "'")
-    if INT_RE.match(tok):
-        return int(tok)
     if DEC_RE.match(tok):
         return Decimal(tok)
-    raise Unsupported(tok)          # CURRENT TIMESTAMP, DATE '..', CAST(..), N'..', X'..'
+    raise Unsupported(tok)          # CURRENT TIMESTAMP, DATE '..', CAST(..), X'..'
 
 
 def _literal_batches(prefix, rows, size):
     return [("sql", prefix + ",".join(f"({r})" for r in rows[i:i + size])) for i in range(0, len(rows), size)]
 
 
-def plan_inserts(queries, literal_batch=100, many_chunk=1000):
+def plan_inserts(queries, literal_batch=100, many_chunk=1000, allow_many=True):
     plan, prefix, norm_prefix, raw_rows = [], None, None, []
     norm = lambda s: re.sub(r"\s+", " ", s.strip().upper())
 
@@ -73,6 +57,8 @@ def plan_inserts(queries, literal_batch=100, many_chunk=1000):
         nonlocal prefix, norm_prefix, raw_rows
         if raw_rows:
             try:
+                if not allow_many:
+                    raise Unsupported("executemany disabled")
                 parsed = [[to_param(t) for t in split_values(r)] for r in raw_rows]
                 if len({len(p) for p in parsed}) != 1:
                     raise Unsupported("column count differs")
@@ -110,3 +96,15 @@ def count_rows(cursor, q):
     q = re.sub(r"(?is)\s+WITH\s+(UR|CS|RS|RR)\s*;?\s*$", "", q.strip().rstrip(";"))
     cursor.execute(f"SELECT COUNT(*) FROM ({q}) AS V WITH UR")
     return cursor.fetchone()[0]
+
+
+def count_all(cursor, queries):
+    """Total rows of ALL validation SELECTs of a WR in ONE round trip."""
+    parts = []
+    for q in queries:
+        q = re.sub(r"(?is)\s+WITH\s+(UR|CS|RS|RR)\s*;?\s*$", "", q.strip().rstrip(";"))
+        parts.append(f"SELECT COUNT(*) AS C FROM ({q}) AS V{len(parts)}")
+    if not parts:
+        return 0
+    cursor.execute("SELECT SUM(C) FROM (" + " UNION ALL ".join(parts) + ") AS T WITH UR")
+    return int(cursor.fetchone()[0] or 0)
