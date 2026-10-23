@@ -1,4 +1,4 @@
-"""Benchmark different ways of inserting rows into a Db2 table (ASRATE).
+"""Benchmark different ways of inserting rows into a Db2 table (RATE).
 
 Usage:
   # real Db2 (pip install ibm_db)
@@ -7,20 +7,20 @@ Usage:
   # no Db2 handy: SQLite stand-in (shows commit/batching effect only, no network latency)
   python benchmark.py --sqlite --rows 20000
 
-Edit COLUMNS / make_rows() to match your real ASRATE table.
+Edit COLUMNS / make_rows() to match your real RATE table.
 """
 import argparse, csv, os, random, sqlite3, tempfile, time
 from datetime import date, timedelta
 
-# --- scenario: made-up ASRATE table; adjust to your real columns -----------
-DDL = """CREATE TABLE ASRATE_BENCH (
+# --- scenario: made-up RATE table; adjust to your real columns -----------
+DDL = """CREATE TABLE RATE_BENCH (
     RATE_ID   INTEGER NOT NULL,
     CURRENCY  VARCHAR(3) NOT NULL,
     RATE_DATE DATE NOT NULL,
     RATE      DECIMAL(18,6) NOT NULL,
     SOURCE    VARCHAR(20)
 )"""
-TABLE = "ASRATE_BENCH"
+TABLE = "RATE_BENCH"
 COLS = "RATE_ID, CURRENCY, RATE_DATE, RATE, SOURCE"
 NCOLS = 5
 
@@ -40,7 +40,7 @@ def lit(v):
 
 # --- insert strategies -------------------------------------------------------
 def one_by_one_commit_each(conn, rows):
-    """What 'Insert into asrate ...' x N in TOAD / a naive script does."""
+    """What 'Insert into rate ...' x N in TOAD / a naive script does."""
     c = conn.cursor()
     for r in rows:
         c.execute(f"INSERT INTO {TABLE} ({COLS}) VALUES ({','.join(lit(v) for v in r)})")
@@ -117,7 +117,7 @@ def reset(conn, sqlite):
 
 def write_load_files(rows, outdir):
     """Fastest option for big volumes: Db2 native bulk load. Run on the Db2 side."""
-    csvp = os.path.join(outdir, "asrate.csv")
+    csvp = os.path.join(outdir, "rate.csv")
     with open(csvp, "w", newline="") as f:
         csv.writer(f).writerows(rows)
     with open(os.path.join(outdir, "load.clp"), "w") as f:
@@ -154,7 +154,7 @@ def main():
         print(f"{name:38}{len(subset):>8}{dt:>9.2f}{len(subset)/dt:>11.0f}")
     out = os.path.dirname(os.path.abspath(__file__))
     write_load_files(rows, out)
-    print(f"\nWrote asrate.csv + load.clp in {out} (Db2 IMPORT/LOAD, run with the db2 CLP).")
+    print(f"\nWrote rate.csv + load.clp in {out} (Db2 IMPORT/LOAD, run with the db2 CLP).")
 
 
 if __name__ == "__main__":

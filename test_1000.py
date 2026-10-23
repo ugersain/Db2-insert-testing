@@ -1,4 +1,4 @@
-"""Real-Db2 test: run 1000 literal 'INSERT INTO ASRATE ...' statements as fast as possible.
+"""Real-Db2 test: run 1000 literal 'INSERT INTO RATE ...' statements as fast as possible.
 
 Start Db2 first (see run_env.sh), then:  python test_1000.py
 """
@@ -11,13 +11,13 @@ N = int(os.environ.get("N", 1000))
 RUNS = 3
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-DDL = """CREATE TABLE ASRATE (
+DDL = """CREATE TABLE RATE (
     RATE_ID   INTEGER NOT NULL PRIMARY KEY,
     CURRENCY  VARCHAR(3) NOT NULL,
     RATE_DATE DATE NOT NULL,
     RATE      DECIMAL(18,6) NOT NULL,
     SOURCE    VARCHAR(20))"""
-PREFIX = "INSERT INTO ASRATE (RATE_ID, CURRENCY, RATE_DATE, RATE, SOURCE) VALUES "
+PREFIX = "INSERT INTO RATE (RATE_ID, CURRENCY, RATE_DATE, RATE, SOURCE) VALUES "
 
 
 def make_rows(n):
@@ -30,12 +30,12 @@ def make_rows(n):
 
 
 rows = make_rows(N)
-# the user's situation: N separate statements, each "Insert into asrate ... values (...)"
+# the user's situation: N separate statements, each "Insert into rate ... values (...)"
 inserts = [f"{PREFIX}({r[0]}, '{r[1]}', '{r[2]}', {r[3]}, '{r[4]}')" for r in rows]
 
 conn = ibm_db.connect(DSN, "", "")
 try:
-    ibm_db.exec_immediate(conn, "DROP TABLE ASRATE")
+    ibm_db.exec_immediate(conn, "DROP TABLE RATE")
 except Exception:
     pass
 ibm_db.exec_immediate(conn, DDL)
@@ -43,11 +43,11 @@ ibm_db.exec_immediate(conn, DDL)
 
 def truncate():
     ibm_db.autocommit(conn, ibm_db.SQL_AUTOCOMMIT_ON)
-    ibm_db.exec_immediate(conn, "TRUNCATE TABLE ASRATE IMMEDIATE")
+    ibm_db.exec_immediate(conn, "TRUNCATE TABLE RATE IMMEDIATE")
 
 
 def count():
-    s = ibm_db.exec_immediate(conn, "SELECT COUNT(*) FROM ASRATE")
+    s = ibm_db.exec_immediate(conn, "SELECT COUNT(*) FROM RATE")
     return int(ibm_db.fetch_tuple(s)[0])
 
 
@@ -102,7 +102,7 @@ STRATS = [
     ("F  execute_many array insert, single COMMIT", f_execute_many),
 ]
 
-print(f"Db2 11.5 in docker, table ASRATE, {N} rows, best of {RUNS}")
+print(f"Db2 11.5 in docker, table RATE, {N} rows, best of {RUNS}")
 print(f"{'strategy':52}{'best s':>8}{'median s':>10}{'rows/s':>10}  ok")
 results = {}
 for name, fn in STRATS:
@@ -127,7 +127,7 @@ subprocess.run(["docker", "cp", sql_path, "db2:/tmp/inserts.sql"], check=True)
 
 def clp(flag):
     ibm_db.autocommit(conn, ibm_db.SQL_AUTOCOMMIT_ON)
-    ibm_db.exec_immediate(conn, "TRUNCATE TABLE ASRATE IMMEDIATE")
+    ibm_db.exec_immediate(conn, "TRUNCATE TABLE RATE IMMEDIATE")
     cmd = ("su - db2inst1 -c \"db2 -v connect to testdb >/dev/null; "
            f"START=\\$(date +%s.%N); db2 {flag} -tf /tmp/inserts.sql >/dev/null; "
            + ("db2 commit >/dev/null; " if flag == "+c" else "") +

@@ -1,18 +1,18 @@
 # Db2 insert benchmark
 
-Compares ways of inserting rows into a Db2 table (`ASRATE`-style scenario).
+Compares ways of inserting rows into a Db2 table (`RATE`-style scenario).
 
     pip install ibm_db
     python benchmark.py --db2 "DATABASE=MYDB;HOSTNAME=host;PORT=50000;PROTOCOL=TCPIP;UID=u;PWD=p;" --rows 20000
     python benchmark.py --sqlite --rows 20000   # no Db2 needed; shows commit/batch effect only
 
 Edit `DDL`, `COLS`, `make_rows()` in `benchmark.py` to match the real table.
-The run also writes `asrate.csv` and `load.clp` for Db2 `IMPORT` / `LOAD`.
+The run also writes `rate.csv` and `load.clp` for Db2 `IMPORT` / `LOAD`.
 
 Rule of thumb: never commit per row; use `executemany` with `?` markers in
 batches of a few thousand rows; for files use `IMPORT ... COMMITCOUNT` or `LOAD`.
 
-## Real Db2 test: 1000 literal `INSERT INTO ASRATE ...` statements
+## Real Db2 test: 1000 literal `INSERT INTO RATE ...` statements
 
 `./run_env.sh` starts Db2 11.5.8 in Docker, then `python test_1000.py` runs the scenario
 (1000 rows, best of 3, Db2 on localhost so network latency is ~0 -- remote servers gain even more
